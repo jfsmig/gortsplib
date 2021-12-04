@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pion/rtcp"
+	"github.com/pion/rtp"
 	"golang.org/x/net/ipv4"
 
 	"github.com/aler9/gortsplib/pkg/multibuffer"
@@ -197,7 +199,11 @@ func (u *serverUDPListener) runReader() {
 }
 
 func (u *serverUDPListener) processRTP(now time.Time, clientData *clientData, payload []byte) {
-	clientData.ss.announcedTracks[clientData.trackID].rtcpReceiver.ProcessPacketRTP(now, payload)
+	var pkt rtp.Packet
+	err := pkt.Unmarshal(payload)
+	if err == nil {
+		clientData.ss.announcedTracks[clientData.trackID].rtcpReceiver.ProcessPacketRTP(now, &pkt)
+	}
 
 	if h, ok := u.s.Handler.(ServerHandlerOnPacketRTP); ok {
 		h.OnPacketRTP(&ServerHandlerOnPacketRTPCtx{
@@ -210,7 +216,12 @@ func (u *serverUDPListener) processRTP(now time.Time, clientData *clientData, pa
 
 func (u *serverUDPListener) processRTCP(now time.Time, clientData *clientData, payload []byte) {
 	if clientData.isPublishing {
-		clientData.ss.announcedTracks[clientData.trackID].rtcpReceiver.ProcessPacketRTCP(now, payload)
+		packets, err := rtcp.Unmarshal(payload)
+		if err == nil {
+			for _, pkt := range packets {
+				clientData.ss.announcedTracks[clientData.trackID].rtcpReceiver.ProcessPacketRTCP(now, pkt)
+			}
+		}
 	}
 
 	if h, ok := u.s.Handler.(ServerHandlerOnPacketRTCP); ok {
