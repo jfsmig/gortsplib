@@ -201,35 +201,41 @@ func (u *serverUDPListener) runReader() {
 func (u *serverUDPListener) processRTP(now time.Time, clientData *clientData, payload []byte) {
 	var pkt rtp.Packet
 	err := pkt.Unmarshal(payload)
-	if err == nil {
-		clientData.ss.announcedTracks[clientData.trackID].rtcpReceiver.ProcessPacketRTP(now, &pkt)
+	if err != nil {
+		return
 	}
+
+	clientData.ss.announcedTracks[clientData.trackID].rtcpReceiver.ProcessPacketRTP(now, &pkt)
 
 	if h, ok := u.s.Handler.(ServerHandlerOnPacketRTP); ok {
 		h.OnPacketRTP(&ServerHandlerOnPacketRTPCtx{
 			Session: clientData.ss,
 			TrackID: clientData.trackID,
-			Payload: payload,
+			Packet:  &pkt,
 		})
 	}
 }
 
 func (u *serverUDPListener) processRTCP(now time.Time, clientData *clientData, payload []byte) {
+	packets, err := rtcp.Unmarshal(payload)
+	if err != nil {
+		return
+	}
+
 	if clientData.isPublishing {
-		packets, err := rtcp.Unmarshal(payload)
-		if err == nil {
-			for _, pkt := range packets {
-				clientData.ss.announcedTracks[clientData.trackID].rtcpReceiver.ProcessPacketRTCP(now, pkt)
-			}
+		for _, pkt := range packets {
+			clientData.ss.announcedTracks[clientData.trackID].rtcpReceiver.ProcessPacketRTCP(now, pkt)
 		}
 	}
 
 	if h, ok := u.s.Handler.(ServerHandlerOnPacketRTCP); ok {
-		h.OnPacketRTCP(&ServerHandlerOnPacketRTCPCtx{
-			Session: clientData.ss,
-			TrackID: clientData.trackID,
-			Payload: payload,
-		})
+		for _, pkt := range packets {
+			h.OnPacketRTCP(&ServerHandlerOnPacketRTCPCtx{
+				Session: clientData.ss,
+				TrackID: clientData.trackID,
+				Packet:  pkt,
+			})
+		}
 	}
 }
 
